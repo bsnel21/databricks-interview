@@ -1,0 +1,18 @@
+# One serverless pipeline: landing volume -> bronze -> silver -> gold.
+resources:
+  pipelines:
+    databricks_interview_pipeline:
+      name: databricks_interview_pipeline
+      catalog: ${var.catalog}
+      schema: ${resources.schemas.bronze.name}
+      root_path: ../pipeline
+      libraries:
+        - glob:
+            include: ../pipeline/transformations/**
+      serverless: true
+      continuous: false
+      # Prototype setting: a broken update fails in seconds instead of retrying for minutes.
+      configuration:
+        landing_path: /Volumes/${var.catalog}/raw/landing
+        pipelines.numUpdateRetryAttempts: "0"
+        pipelines.maxFlowRetryAttempts: "0"

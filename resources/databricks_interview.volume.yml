@@ -1,0 +1,9 @@
+# Landing volume: upload source files to /Volumes/<catalog>/raw/landing/<source>/
+resources:
+  volumes:
+    landing:
+      catalog_name: ${var.catalog}
+      schema_name: ${resources.schemas.raw.name}
+      name: landing
+      volume_type: MANAGED
+      comment: Source files as received, one folder per source.

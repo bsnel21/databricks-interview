@@ -1,0 +1,26 @@
+# Bundle root: the whole data side of the project deploys with `databricks bundle deploy -t prod`.
+bundle:
+  name: databricks_interview
+
+include:
+  - resources/*.yml
+
+# Never upload local-only material or data files to the workspace.
+sync:
+  exclude:
+    - "*.pdf"
+    - data/
+
+variables:
+  catalog:
+    description: Unity Catalog catalog that holds every schema, volume and table of the project.
+    default: databricks_interview
+  warehouse_id:
+    description: SQL warehouse for Genie and the dashboard.
+    lookup:
+      warehouse: Serverless Starter Warehouse
+
+targets:
+  # One target, without `mode: development`, so names carry no "[dev <user>]" prefix in the demo.
+  prod:
+    default: true

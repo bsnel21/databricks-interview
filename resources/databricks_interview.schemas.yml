@@ -1,0 +1,19 @@
+# One schema per layer. The catalog itself is created once with SQL (Free Edition only creates catalogs on Default Storage through SQL or the UI; see README).
+resources:
+  schemas:
+    raw:
+      catalog_name: ${var.catalog}
+      name: raw
+      comment: Landing zone. Holds the landing volume with the source files as received.
+    bronze:
+      catalog_name: ${var.catalog}
+      name: bronze
+      comment: Source files read as-is, one table per source.
+    silver:
+      catalog_name: ${var.catalog}
+      name: silver
+      comment: Cleaned, typed and deduplicated tables, one row per stated grain, with quality flags.
+    gold:
+      catalog_name: ${var.catalog}
+      name: gold
+      comment: Tables shaped around the stakeholder's questions. Genie and the dashboard read these.
