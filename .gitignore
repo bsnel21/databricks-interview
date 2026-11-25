@@ -1,0 +1,40 @@
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets and local config
+.env
+.env.*
+*.pem
+*.key
+.databrickscfg
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Databricks
+.databricks/
+
+# Data files (remove these lines if you want to commit small sample data)
+*.csv
+*.parquet
+*.xlsx
+
+# macOS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+
+# Databricks agent skills (installed per clone with databricks aitools; not committed, see README)
+.claude/skills/databricks-*
