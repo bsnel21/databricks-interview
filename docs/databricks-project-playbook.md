@@ -37,8 +37,9 @@ The data pieces deploy together as one **Declarative Automation Bundle** (former
 | Schemas | `resources/<project>.schemas.yml` | `raw`, `bronze`, `silver`, `gold` |
 | Landing volume | `resources/<project>.volume.yml` | the `raw.landing` volume the files are uploaded to |
 | Pipeline | `resources/<project>.pipeline.yml` | serverless pipeline, `root_path: ../pipeline`, glob over `transformations/**`, `landing_path` in its configuration |
+| Dashboard | `resources/<project>.dashboard.yml` plus `dashboards/<name>.lvdash.json` | AI/BI dashboard on the gold tables, published on deploy |
 
-The catalog itself is created once with SQL, outside the bundle: Free Edition refuses to create a catalog through the API, because it needs Default Storage (README). The Genie agent and the dashboard are also built outside the bundle (2.4, 2.5).
+The catalog itself is created once with SQL, outside the bundle: Free Edition refuses to create a catalog through the API, because it needs Default Storage (README). The Genie agent is also outside the bundle, because bundles don't support Genie agents (2.4).
 
 ---
 
@@ -85,7 +86,12 @@ The catalog itself is created once with SQL, outside the bundle: Free Edition re
 
 ### 2.4 The Genie agent
 
-Built outside the bundle: in the workspace UI, or by Claude Code with the `databricks-genie-agents` skill (`create-space` / `update-space` from `genie/genie_agent.json`). The configuration is kept in the repo as `genie/genie_agent.json`, so the instructions and examples are written down. If it's changed in the UI, copy the change back into the file.
+Built outside the bundle (bundles don't support Genie agents): by Claude Code with the `databricks-genie-agents` skill, or in the workspace UI. The configuration is kept in the repo as `genie/genie_agent.json`, so the instructions and examples are written down. If it's changed in the UI, copy the change back into the file (export with `databricks genie get-space <id> --include-serialized-space`).
+
+- **Create:** `databricks genie create-space <warehouse id> "<json>" --title ... --description ... --parent-path /Workspace/Users/<you>/databricks_interview_demo`. **Update:** `databricks genie update-space <id> --serialized-space "<json>"` (a full replacement).
+- **Format rules** (strictly validated): every item has a unique 32-character hex `id`, and lists are sorted by id; text fields are arrays of strings; `benchmarks` sits at the top level; at most one `text_instructions` item. Fixed ids (`a000...001`, `b000...001`, `c000...001`) keep diffs stable.
+- **Column descriptions and synonyms** (`column_configs`) do most of the work; turn on entity matching only for categorical columns people name, such as region.
+- **Test every example query on the warehouse before it goes in,** then ask the agent questions phrased differently from its examples (`databricks genie start-conversation <id> "<question>"`).
 
 Building it means writing its briefing; testing it means asking it questions as a user would and fixing the misses.
 
@@ -102,7 +108,11 @@ Building it means writing its briefing; testing it means asking it questions as 
 
 ### 2.5 The AI/BI dashboard
 
-One dashboard with the one or two charts that support the decision, on the gold tables. Built in the workspace UI. It's often a stronger demo than Genie alone: open the dashboard to show the answer, then switch to Genie for the follow-up questions.
+One dashboard with the one or two charts that support the decision, on the gold tables. It's often a stronger demo than Genie alone: open the dashboard to show the answer, then switch to Genie for the follow-up questions.
+
+- **A bundle resource,** so Claude Code writes and deploys it: `dashboards/<name>.lvdash.json` (datasets with `queryLines`, a canvas page, widgets with `queries` and `spec`) and `resources/<project>.dashboard.yml` with `warehouse_id` and `dataset_catalog: ${var.catalog}`, so the dataset SQL uses `gold.<table>` without a catalog name.
+- **Widget specs:** counters use `spec.version: 2`; bar and line charts use `spec.version: 3` with `encodings.x`, `y` and optional `color`, each with a `scale.type` (`categorical`, `quantitative`, `temporal`). Field names in `encodings` must match the `fields[].name` in the widget's query.
+- **Editing in the UI is fine for layout tweaks,** but pull the change back before the next deploy, or the deploy overwrites it: `databricks bundle generate dashboard --resource <key> --force`.
 
 ### 2.6 Working with Claude Code
 
@@ -158,7 +168,7 @@ Installed skills: `databricks-core`, `databricks-pipelines`, `databricks-dabs`, 
 Exceptions (CLAUDE.md wins):
 - **Ask before deleting or reaching outside the project:** inside the project, deploy and run, then report, as the serverless skill does. Whatever a skill says, ask before deleting anything, changing grants, or touching anything outside the project (see the working rules).
 - **Genie:** the agent is built outside the bundle, in the UI or with the skill's `create-space` / `update-space` from `genie/genie_agent.json`. Keep that file current: copy UI changes back into it. Never run `trash-space` without asking. Databricks now calls Genie spaces "Genie Agents".
-- **One instruction file and our layout:** CLAUDE.md is the only agent instructions file. Never run `databricks bundle init`, and never create `AGENTS.md`. Keep this folder layout (`pipeline/transformations/<layer>/`, `resources/`, `genie/`, `docs/`, plus `ingest/` only if a source is an API).
+- **One instruction file and our layout:** CLAUDE.md is the only agent instructions file. Never run `databricks bundle init`, and never create `AGENTS.md`. Keep this folder layout (`pipeline/transformations/<layer>/`, `resources/`, `genie/`, `dashboards/`, `docs/`, plus `ingest/` only if a source is an API).
 - **Profile:** use the default CLI profile (the one `databricks auth profiles` marks as Default). Don't ask the user to pick one.
 - **Job tags and compute mode:** don't add `aidevkit_project` tags (or any other tags), and don't add or change `performance_target` without asking.
 
@@ -179,7 +189,7 @@ These go in CLAUDE.md verbatim (adjust only if the user's preferences change). T
 - Inside the project (its catalog, bundle, Genie agent and dashboard), deploy, run the pipeline and change tables, the Genie agent and the dashboard without asking, then report what was done.
 - Ask first before deleting anything (tables, schemas, volumes, files, the Genie agent, the dashboard, or a deploy that would delete or recreate a resource), before changing grants, and before touching anything outside the project.
 - Deploy from the local files; they don't need to be pushed first. Run `databricks bundle validate --strict -t prod` before every deploy.
-- Never edit deployed code in the workspace UI: change the repo, then redeploy. Scratch notebooks for exploring the data or trying Genie Code are fine; anything worth keeping moves into the repo. The Genie agent and the dashboard may be built in the UI; copy Genie changes back into `genie/genie_agent.json`.
+- Never edit deployed code in the workspace UI: change the repo, then redeploy. Scratch notebooks for exploring the data or trying Genie Code are fine; anything worth keeping moves into the repo. The Genie agent and the dashboard may be changed in the UI; copy Genie changes back into `genie/genie_agent.json`, and pull dashboard changes back with `databricks bundle generate dashboard --resource <key> --force` before the next deploy.
 - Coding subagents run on Sonnet.
 ```
 
@@ -216,7 +226,7 @@ These go in CLAUDE.md verbatim (adjust only if the user's preferences change). T
 5. Write `databricks.yml` with `bundle.name`, a `catalog` variable, `warehouse_id` and the single `prod` target. Give resource keys and display names project-specific names.
 6. Create the catalog once with SQL (README); the bundle creates the schemas `raw`, `bronze`, `silver`, `gold` and the `raw.landing` volume.
 7. Fill in CLAUDE.md from the skeleton in 5.1.
-8. Create the folder layout: `pipeline/transformations/{bronze,silver,gold}/`, `resources/`, `genie/`, `docs/`, plus `ingest/` only if a source is an API.
+8. Create the folder layout: `pipeline/transformations/{bronze,silver,gold}/`, `resources/`, `genie/`, `dashboards/`, `docs/`, plus `ingest/` only if a source is an API.
 
 **Phase 2: landing to silver**
 9. Upload the files to the landing volume (or write the API notebook from 2.2 and run it once).
@@ -227,8 +237,8 @@ These go in CLAUDE.md verbatim (adjust only if the user's preferences change). T
 12. For each question from step 1, name the table and grain that answers it in one simple query. Build those gold tables, with baseline comparisons, and both definitions where two exist.
 
 **Phase 4: Genie agent and dashboard**
-13. Build the Genie agent (2.4): tables, instructions, example SQL, sample questions and benchmarks. Run the benchmarks and fix the misses.
-14. Build the dashboard (2.5) with the charts for the decision.
+13. Build the Genie agent (2.4): tables, instructions, example SQL, sample questions and benchmarks. Ask it test questions and fix the misses. The skeleton's `genie/genie_agent.json` is the template.
+14. Build the dashboard (2.5) with the charts for the decision. The skeleton's `dashboards/regional_revenue.lvdash.json` is the template.
 
 **Then:** the deck and the demo script. Update CLAUDE.md and `docs/project-status.md` as you go.
 
@@ -245,7 +255,7 @@ These go in CLAUDE.md verbatim (adjust only if the user's preferences change). T
 
 ## Project overview
 <one paragraph: the stakeholder, the decision, the sources>
-<folder tree: pipeline/transformations/{bronze,silver,gold}/, resources/, genie/, docs/, ingest/ if needed>
+<folder tree: pipeline/transformations/{bronze,silver,gold}/, resources/, genie/, dashboards/, docs/, ingest/ if needed>
 - **Landing**: `/Volumes/<catalog>/raw/landing/<source>/`: what each source's files hold.
 - **Tables**: one line per table: grain and purpose (the same text as its pipeline comment).
 

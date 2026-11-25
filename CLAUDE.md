@@ -8,7 +8,7 @@ Instructions for working in this repository.
 
 Not started. The business problem, sources and users are decided in Phase 0 of the playbook's build plan (section 4), when the scenario arrives. Fill in this section from the CLAUDE.md skeleton in playbook section 5.1 as the project is built.
 
-**Current state: a tested skeleton on dummy data.** One `orders` source (`data/orders.csv`, local only) flows through the landing volume to `bronze.bronze_orders`, `silver.silver_orders` and `gold.gold_daily_revenue` (each table's grain is in its pipeline comment). On the day, the skeleton's SQL is replaced with the scenario's.
+**Current state: a tested skeleton on dummy data.** One `orders` source (`data/orders.csv`, local only) flows through the landing volume to `bronze.bronze_orders`, `silver.silver_orders` and `gold.gold_daily_revenue` (each table's grain is in its pipeline comment). A Genie agent and a dashboard sit on the gold table. On the day, the skeleton's SQL, Genie configuration and dashboard are replaced with the scenario's.
 
 ## Syncing with Databricks
 
@@ -16,6 +16,8 @@ Not started. The business problem, sources and users are decided in Phase 0 of t
 - Bundle `databricks_interview`, target `prod`, deployed to `/Workspace/Users/<user>/.bundle/databricks_interview/prod`. It creates the schemas `raw`, `bronze`, `silver`, `gold`, the volume `raw.landing` and the pipeline.
 - Pipeline: key `databricks_interview_pipeline`, id `da84d6bc-98f9-434d-85d0-0fd78a39ced6`. Run with `databricks bundle run databricks_interview_pipeline -t prod`.
 - SQL warehouse: `Serverless Starter Warehouse` (looked up by name in `databricks.yml`).
+- Dashboard: bundle key `regional_revenue`, "Regional Revenue", id `01f1e91160f511239e6ae604b05c73f7`, from `dashboards/regional_revenue.lvdash.json`.
+- Genie agent: "Regional Revenue", space id `01f1e9112d2d1e8db262657920132c4c`, in `/Workspace/Users/<user>/databricks_interview_demo`, from `genie/genie_agent.json` (outside the bundle; update with `databricks genie update-space`).
 - Commands for deploy, upload and run are in the README.
 
 ## Security and data
@@ -31,7 +33,7 @@ Not started. The business problem, sources and users are decided in Phase 0 of t
 - Inside the project (its catalog, bundle, Genie agent and dashboard), deploy, run the pipeline and change tables, the Genie agent and the dashboard without asking, then report what was done.
 - Ask first before deleting anything (tables, schemas, volumes, files, the Genie agent, the dashboard, or a deploy that would delete or recreate a resource), before changing grants, and before touching anything outside the project.
 - Deploy from the local files; they don't need to be pushed first. Run `databricks bundle validate --strict -t prod` before every deploy.
-- Never edit deployed code in the workspace UI: change the repo, then redeploy. Scratch notebooks for exploring the data or trying Genie Code are fine; anything worth keeping moves into the repo. The Genie agent and the dashboard may be built in the UI; copy Genie changes back into `genie/genie_agent.json`.
+- Never edit deployed code in the workspace UI: change the repo, then redeploy. Scratch notebooks for exploring the data or trying Genie Code are fine; anything worth keeping moves into the repo. The Genie agent and the dashboard may be changed in the UI; copy Genie changes back into `genie/genie_agent.json`, and pull dashboard changes back with `databricks bundle generate dashboard --resource <key> --force` before the next deploy.
 - Coding subagents run on Sonnet.
 
 ## Databricks agent skills
@@ -45,7 +47,7 @@ Installed skills: `databricks-core`, `databricks-pipelines`, `databricks-dabs`, 
 Exceptions (CLAUDE.md wins):
 - **Ask before deleting or reaching outside the project:** inside the project, deploy and run, then report, as the serverless skill does. Whatever a skill says, ask before deleting anything, changing grants, or touching anything outside the project (see the working rules).
 - **Genie:** the agent is built outside the bundle, in the UI or with the skill's `create-space` / `update-space` from `genie/genie_agent.json`. Keep that file current: copy UI changes back into it. Never run `trash-space` without asking. Databricks now calls Genie spaces "Genie Agents".
-- **One instruction file and our layout:** CLAUDE.md is the only agent instructions file. Never run `databricks bundle init`, and never create `AGENTS.md`. Keep this folder layout (`pipeline/transformations/<layer>/`, `resources/`, `genie/`, `docs/`, plus `ingest/` only if a source is an API).
+- **One instruction file and our layout:** CLAUDE.md is the only agent instructions file. Never run `databricks bundle init`, and never create `AGENTS.md`. Keep this folder layout (`pipeline/transformations/<layer>/`, `resources/`, `genie/`, `dashboards/`, `docs/`, plus `ingest/` only if a source is an API).
 - **Profile:** use the default CLI profile (the one `databricks auth profiles` marks as Default). Don't ask the user to pick one.
 - **Job tags and compute mode:** don't add `aidevkit_project` tags (or any other tags), and don't add or change `performance_target` without asking.
 

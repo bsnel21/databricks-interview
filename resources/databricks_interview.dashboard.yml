@@ -1,0 +1,9 @@
+# AI/BI dashboard on the gold tables. If it is edited in the UI, pull the change back with
+# `databricks bundle generate dashboard --resource regional_revenue --force` before the next deploy.
+resources:
+  dashboards:
+    regional_revenue:
+      display_name: Regional Revenue
+      file_path: ../dashboards/regional_revenue.lvdash.json
+      warehouse_id: ${var.warehouse_id}
+      dataset_catalog: ${var.catalog}

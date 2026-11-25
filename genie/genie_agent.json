@@ -1,0 +1,83 @@
+{
+  "version": 2,
+  "config": {
+    "sample_questions": [
+      {"id": "a0000000000000000000000000000001", "question": ["Which region brings in the most net revenue?"]},
+      {"id": "a0000000000000000000000000000002", "question": ["How did daily net revenue trend over the last week?"]},
+      {"id": "a0000000000000000000000000000003", "question": ["Which days were unusually strong or weak for a region?"]},
+      {"id": "a0000000000000000000000000000004", "question": ["What is the average order value in each region?"]}
+    ]
+  },
+  "data_sources": {
+    "tables": [
+      {
+        "identifier": "databricks_interview.gold.gold_daily_revenue",
+        "description": ["One row per order date and region. Counts only valid orders: void, test and unreadable orders are already excluded."],
+        "column_configs": [
+          {"column_name": "gross_revenue", "description": ["Revenue before discounts, in USD."], "synonyms": ["gross sales", "revenue before discounts"]},
+          {"column_name": "net_revenue", "description": ["Revenue after discounts, in USD. The default meaning of 'revenue' and 'sales'."], "synonyms": ["revenue", "sales", "net sales"]},
+          {"column_name": "net_revenue_vs_region_average", "description": ["Net revenue on this day divided by the region's average day. 1.0 is a typical day; 2.0 is double; 0.5 is half."], "synonyms": ["compared with normal", "vs average", "unusual"]},
+          {"column_name": "order_count", "description": ["Number of valid orders on this day in this region."], "synonyms": ["orders", "number of orders"]},
+          {"column_name": "order_date", "description": ["The day the orders were placed."], "synonyms": ["date", "day"]},
+          {"column_name": "region", "description": ["Sales region: North, South, East or West."], "synonyms": ["area", "territory"], "enable_format_assistance": true, "enable_entity_matching": true}
+        ]
+      }
+    ]
+  },
+  "instructions": {
+    "text_instructions": [
+      {
+        "id": "b0000000000000000000000000000001",
+        "content": [
+          "Audience: a business stakeholder deciding where to focus sales effort. Answer in plain language, lead with the number, and keep it short.\n",
+          "'Revenue' and 'sales' mean net_revenue unless the user says gross.\n",
+          "Relative periods ('last week', 'recently') are measured back from the latest order_date in the table, not from today, because the data may lag. Say which dates the answer covers.\n",
+          "Average order value is SUM(net_revenue) / SUM(order_count), never an average of daily averages.\n",
+          "A day is unusual when net_revenue_vs_region_average is at least 1.5 (strong) or at most 0.5 (weak).\n",
+          "Show money in USD with two decimals."
+        ]
+      }
+    ],
+    "example_question_sqls": [
+      {
+        "id": "b0000000000000000000000000000002",
+        "question": ["Which region brings in the most net revenue?"],
+        "sql": ["SELECT gold_daily_revenue.region, SUM(gold_daily_revenue.net_revenue) AS net_revenue\nFROM databricks_interview.gold.gold_daily_revenue AS gold_daily_revenue\nGROUP BY gold_daily_revenue.region\nORDER BY net_revenue DESC"]
+      },
+      {
+        "id": "b0000000000000000000000000000003",
+        "question": ["How did daily net revenue trend over the last week?"],
+        "sql": ["SELECT gold_daily_revenue.order_date, SUM(gold_daily_revenue.net_revenue) AS net_revenue\nFROM databricks_interview.gold.gold_daily_revenue AS gold_daily_revenue\nWHERE gold_daily_revenue.order_date > (SELECT MAX(order_date) FROM databricks_interview.gold.gold_daily_revenue) - INTERVAL 7 DAYS\nGROUP BY gold_daily_revenue.order_date\nORDER BY gold_daily_revenue.order_date"]
+      },
+      {
+        "id": "b0000000000000000000000000000004",
+        "question": ["Which days were unusually strong or weak for a region?"],
+        "sql": ["SELECT gold_daily_revenue.order_date, gold_daily_revenue.region, gold_daily_revenue.net_revenue, gold_daily_revenue.net_revenue_vs_region_average\nFROM databricks_interview.gold.gold_daily_revenue AS gold_daily_revenue\nWHERE gold_daily_revenue.net_revenue_vs_region_average >= 1.5 OR gold_daily_revenue.net_revenue_vs_region_average <= 0.5\nORDER BY gold_daily_revenue.net_revenue_vs_region_average DESC"]
+      },
+      {
+        "id": "b0000000000000000000000000000005",
+        "question": ["What is the average order value in each region?"],
+        "sql": ["SELECT gold_daily_revenue.region, ROUND(try_divide(SUM(gold_daily_revenue.net_revenue), SUM(gold_daily_revenue.order_count)), 2) AS average_order_value\nFROM databricks_interview.gold.gold_daily_revenue AS gold_daily_revenue\nGROUP BY gold_daily_revenue.region\nORDER BY average_order_value DESC"]
+      }
+    ]
+  },
+  "benchmarks": {
+    "questions": [
+      {
+        "id": "c0000000000000000000000000000001",
+        "question": ["What was total net revenue in the West region?"],
+        "answer": [{"format": "SQL", "content": ["SELECT SUM(net_revenue) AS net_revenue FROM databricks_interview.gold.gold_daily_revenue WHERE region = 'West'"]}]
+      },
+      {
+        "id": "c0000000000000000000000000000002",
+        "question": ["How many valid orders did the North region have?"],
+        "answer": [{"format": "SQL", "content": ["SELECT SUM(order_count) AS order_count FROM databricks_interview.gold.gold_daily_revenue WHERE region = 'North'"]}]
+      },
+      {
+        "id": "c0000000000000000000000000000003",
+        "question": ["Which region has the lowest average order value?"],
+        "answer": [{"format": "SQL", "content": ["SELECT region, ROUND(try_divide(SUM(net_revenue), SUM(order_count)), 2) AS average_order_value FROM databricks_interview.gold.gold_daily_revenue GROUP BY region ORDER BY average_order_value ASC LIMIT 1"]}]
+      }
+    ]
+  }
+}

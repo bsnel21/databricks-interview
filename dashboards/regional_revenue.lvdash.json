@@ -1,0 +1,135 @@
+{
+  "datasets": [
+    {
+      "name": "daily_revenue",
+      "displayName": "Daily revenue by region",
+      "queryLines": [
+        "SELECT order_date, region, order_count, gross_revenue, net_revenue, net_revenue_vs_region_average\n",
+        "FROM gold.gold_daily_revenue"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "overview",
+      "displayName": "Regional revenue",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layout": [
+        {
+          "widget": {
+            "name": "title",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Regional revenue\n",
+                "Valid orders only: void, test and unreadable orders are excluded."
+              ]
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 6, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "total_net_revenue",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "daily_revenue",
+                  "fields": [{"name": "sum(net_revenue)", "expression": "SUM(`net_revenue`)"}],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {"value": {"fieldName": "sum(net_revenue)", "displayName": "Net revenue (USD)"}},
+              "frame": {"showTitle": true, "title": "Total net revenue (USD)"}
+            }
+          },
+          "position": {"x": 0, "y": 2, "width": 2, "height": 3}
+        },
+        {
+          "widget": {
+            "name": "total_orders",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "daily_revenue",
+                  "fields": [{"name": "sum(order_count)", "expression": "SUM(`order_count`)"}],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {"value": {"fieldName": "sum(order_count)", "displayName": "Orders"}},
+              "frame": {"showTitle": true, "title": "Valid orders"}
+            }
+          },
+          "position": {"x": 2, "y": 2, "width": 2, "height": 3}
+        },
+        {
+          "widget": {
+            "name": "net_revenue_by_region",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "daily_revenue",
+                  "fields": [
+                    {"name": "region", "expression": "`region`"},
+                    {"name": "sum(net_revenue)", "expression": "SUM(`net_revenue`)"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {"fieldName": "region", "scale": {"type": "categorical", "sort": {"by": "y-reversed"}}, "displayName": "Region"},
+                "y": {"fieldName": "sum(net_revenue)", "scale": {"type": "quantitative"}, "displayName": "Net revenue (USD)"}
+              },
+              "frame": {"showTitle": true, "title": "Net revenue by region"}
+            }
+          },
+          "position": {"x": 0, "y": 5, "width": 3, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "daily_net_revenue",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "daily_revenue",
+                  "fields": [
+                    {"name": "order_date", "expression": "`order_date`"},
+                    {"name": "region", "expression": "`region`"},
+                    {"name": "sum(net_revenue)", "expression": "SUM(`net_revenue`)"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {"fieldName": "order_date", "scale": {"type": "temporal"}, "displayName": "Order date"},
+                "y": {"fieldName": "sum(net_revenue)", "scale": {"type": "quantitative"}, "displayName": "Net revenue (USD)"},
+                "color": {"fieldName": "region", "scale": {"type": "categorical"}, "displayName": "Region"}
+              },
+              "frame": {"showTitle": true, "title": "Daily net revenue by region"}
+            }
+          },
+          "position": {"x": 3, "y": 5, "width": 3, "height": 6}
+        }
+      ]
+    }
+  ]
+}
