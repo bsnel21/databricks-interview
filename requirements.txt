@@ -1,0 +1,4 @@
+# Local Python tooling (Python 3.12 venv; see README). The Databricks CLI is installed with Homebrew, not pip.
+databricks-sdk
+databricks-sql-connector
+python-dotenv

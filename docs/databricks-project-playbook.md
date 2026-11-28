@@ -62,6 +62,27 @@ The catalog itself is created once with SQL, outside the bundle: Free Edition re
 - **If the source is an API,** write one small notebook in `ingest/` that calls it and writes the responses as JSON files into the same landing folder. The rest of the flow stays the same. Secrets go in `dbutils.secrets`, never in the notebook.
 - Keep the files as received. Every fix happens in silver, so you can always show "this is what we were given".
 
+**Intake when the data arrives by email.** Save every attachment to `data/<source>/` locally (gitignored), and don't open-and-save it in Excel, since that rewrites dates and ids. Before uploading:
+1. **List what came:** files, formats, sizes, and whether several files share one shape (monthly extracts of the same table) or are different tables.
+2. **Look at each file:** `head -5` for CSV and JSON Lines; the first characters (`[` means a JSON array, `{` per line means JSON Lines); the sheet names and header row for Excel. Note the separator, header row, encoding, keys and date format.
+3. **Decide the folders:** **one landing folder = one shape = one bronze table.** Files with the same columns (even in a different order, or with an added column) share a folder; a different table gets its own folder. A workbook with several sheets is one folder, read once per sheet.
+4. **Unzip locally** and upload the contents. `read_files` decompresses `.gz` but reads a `.zip` archive as garbage bytes (tested).
+5. Write down each source's grain and keys in `docs/project-status.md` before writing SQL.
+
+**`read_files` by format.** Tested on the Free Edition SQL warehouse (not yet inside the pipeline) unless a row says **untested**. Always keep `inferColumnTypes => false`.
+
+| Delivery | Bronze `read_files` options | Notes from the test |
+|---|---|---|
+| One or many CSVs, same table | `format => 'csv', header => true` | Files with columns in a different order line up by name; a column missing from a file is NULL. Add `_metadata.file_name` to see which file a row came from. A UTF-8 BOM is handled. |
+| CSV with `;` or tabs | add `sep => ';'` (tabs: `'\t'`, **untested**) | European numbers like `1.234,50` stay strings; fix them in silver with `replace` before `try_cast`. |
+| JSON array (`[ {...}, {...} ]`) | `format => 'json', multiLine => true` | Set `multiLine` for arrays and pretty-printed files. |
+| JSON Lines (one object per line) | `format => 'json'` | |
+| Nested JSON | `format => 'json'` | With all strings, a nested object or array lands as a **JSON string**. Read fields with `customer:name::string`, and explode arrays in silver with `LATERAL variant_explode(parse_json(items)) AS i`, then `i.value:sku::string`. |
+| Excel `.xlsx` | `format => 'excel', headerRows => 1, dataAddress => '<Sheet>'` | List sheets with `operation => 'listSheets'`. A title row above the header needs a bounded range: `dataAddress => 'Sheet!A3:C500'` (an open range like `A3:C` fails). Date cells land as `2026-11-01T00:00:00.000`. Numbers can land as `7.0`: `try_cast('1001.0' AS BIGINT)` is **NULL**, so cast ids through `DECIMAL` first. Not yet run inside the pipeline: if `excel` fails there, convert the sheet to CSV locally with openpyxl and land the CSV. |
+| `.csv.gz` / `.json.gz` | same as the uncompressed format | `.csv.gz` tested and decompressed automatically; `.json.gz` **untested**. |
+| `.zip` | not readable | Unzip before uploading. |
+| Parquet | `format => 'parquet'` | **Untested.** Expected to keep the file's own column types. |
+
 ### 2.3 One Spark Declarative Pipeline for bronze, silver and gold
 
 - **SQL, one dataset per file, named after the dataset,** under `pipeline/transformations/<layer>/` (the `databricks-pipelines` skill's defaults).
@@ -83,6 +104,22 @@ The catalog itself is created once with SQL, outside the bundle: Free Edition re
 - **Add comparison-to-baseline columns** (`*_vs_average`), because "is this unusual?" is the most common follow-up.
 - **Weighted averages, never averages of averages.** Aggregate from rows, or weight by the count.
 - **When two definitions of a concept both matter, keep both and name them differently,** and say which one the decision uses.
+
+**Where and when the joins happen:**
+
+| Layer | Combining allowed | Not allowed |
+|---|---|---|
+| Bronze | Many files of one shape read together from one folder (a `read_files` union, not a join). | Any join. One bronze table per source shape. |
+| Silver | `UNION ALL BY NAME` of the same entity delivered in two formats or files (orders as CSV plus orders as JSON), with a `source` column, deduped after the union. Exploding nested JSON into a child table (`silver_order_items`). A lookup that only standardizes a key or code (region name to region id). | Joining one business entity onto another. |
+| Gold | Fact-to-dimension joins for the stakeholder's questions (orders to customers to regions). This is the default. | Joining before each side is deduped to its grain in silver. |
+| Silver (exception) | When two or more gold tables repeat the same fact-to-dimension join, build it once as an enriched silver table (`silver_orders_enriched`, one row per order) and have gold read that. Decided per scenario; note the decision in `docs/project-status.md`. | Enriched tables that change the fact's grain. |
+
+Join rules:
+- **Join only after both sides are at their stated grain** (silver's `QUALIFY`), on typed keys of the same type (`BIGINT` to `BIGINT`, trimmed, same case).
+- **`LEFT JOIN` from the fact**, so a missing dimension row never drops revenue, and flag the miss (`customer_id IS NOT NULL AND c.customer_id IS NULL AS is_unmatched_customer`).
+- **Check fan-out:** the joined table must have the fact's row count. Add an expectation or compare `COUNT(*)` before and after; a duplicate dimension key silently doubles the sums.
+- **Report the match rate** ("97% of orders match a customer") in the demo.
+- **Ask the user before choosing** whenever a join is unclear: the key isn't obvious, the keys are in different formats, a dimension changes over time (which version applies to an old order?), or one row could match many.
 
 ### 2.4 The Genie agent
 
@@ -112,7 +149,10 @@ One dashboard with the one or two charts that support the decision, on the gold 
 
 - **A bundle resource,** so Claude Code writes and deploys it: `dashboards/<name>.lvdash.json` (datasets with `queryLines`, a canvas page, widgets with `queries` and `spec`) and `resources/<project>.dashboard.yml` with `warehouse_id` and `dataset_catalog: ${var.catalog}`, so the dataset SQL uses `gold.<table>` without a catalog name.
 - **Widget specs:** counters use `spec.version: 2`; bar and line charts use `spec.version: 3` with `encodings.x`, `y` and optional `color`, each with a `scale.type` (`categorical`, `quantitative`, `temporal`). Field names in `encodings` must match the `fields[].name` in the widget's query.
-- **Editing in the UI is fine for layout tweaks,** but pull the change back before the next deploy, or the deploy overwrites it: `databricks bundle generate dashboard --resource <key> --force`.
+- **Editing in the UI is encouraged** (layout, chart types, colours, filters): Claude Code drafts from code, the user refines visually. Keep the repo in step:
+  - While editing, run `databricks bundle generate dashboard --resource <key> --watch --force -t prod` in the background. It rewrites the `.lvdash.json` file on every save in the UI.
+  - Without the watch, run the same command without `--watch` before the next deploy, or the deploy overwrites the UI edits.
+  - Stop the watch before changing the `.lvdash.json` from code, or the next UI save overwrites the code change.
 
 ### 2.6 Working with Claude Code
 
@@ -208,6 +248,10 @@ These go in CLAUDE.md verbatim (adjust only if the user's preferences change). T
 | Unreadable values in a source file | Bronze lands strings; silver's `try_cast` turns them into NULL and `has_bad_values`. Count them and mention them in the demo. |
 | A record's "date" has two meanings (order date vs ship date) | Keep both columns and say which one the decision uses. |
 | Names stored in different formats in different tables | Join on ids, and tell Genie which format each table uses. |
+| Data arrives as a `.zip` | Unzip locally first; `read_files` can't open zip archives. |
+| Excel ids land as `1001.0` and `try_cast` to `BIGINT` gives NULL | Cast through `DECIMAL(38, 6)` first, or land a CSV export. |
+| Nested JSON fields come back as strings | Use `col:field::string` and `variant_explode(parse_json(col))` in silver. |
+| Sums double after a join | A dimension key isn't unique. Dedupe the dimension in silver, and check the row count after the join. |
 | Multiple rows per entity give wrong Genie answers | Add a "REQUIRED FILTERS" instruction, and put a QUALIFY example in the instructions. |
 | Genie UI changes lost | Copy them back into `genie/genie_agent.json`. |
 | Genie benchmark marked wrong despite a correct answer | Trim benchmark SQL to the columns the question asks for. |
@@ -240,7 +284,28 @@ These go in CLAUDE.md verbatim (adjust only if the user's preferences change). T
 13. Build the Genie agent (2.4): tables, instructions, example SQL, sample questions and benchmarks. Ask it test questions and fix the misses. The skeleton's `genie/genie_agent.json` is the template.
 14. Build the dashboard (2.5) with the charts for the decision. The skeleton's `dashboards/regional_revenue.lvdash.json` is the template.
 
-**Then:** the deck and the demo script. Update CLAUDE.md and `docs/project-status.md` as you go.
+**Phase 5: deck and demo script**
+
+**The template is a starting point, not a script.** The scenario decides the story: the slides, their order, the titles and the wording all follow the prompt and the business problem. Questions, data sources, the gold tables and the number of findings can all change. Drop, reorder, duplicate or retitle slides to fit, for example:
+- several findings, each on a copy of the evidence slide;
+- no single headline number, so the short-answer slide becomes a two-column comparison;
+- a risk or cost question, which needs its own slide.
+
+The fixed parts are the theme, the layouts and the find-and-replace way of filling them. Sketch the slide list from the Phase 0 framing before filling anything, and confirm it with the user.
+
+The deck is a **Google Slides deck from the start**. Don't draft it as a claude.ai artifact or a .pptx and convert it later. Claude Code builds and edits it in place through the Google Slides connector, so the link stays the same from first draft to the demo.
+
+15. **Copy the template.** The template is the Google Slides deck `Databricks Interview Deck Template` in the user's Drive. Its 11 slides are: cover, decision, short answer, evidence screenshot (spare), data, what I built, live demo, real and assumed, next steps, appendix divider and AI backup. It uses a Databricks-style theme set on the master: Navy `#1B3139`, Oat `#F9F7F4` and `#EEEDE9`, Lava `#FF3621` as the accent, and DM Sans. Text sits in the layouts' own title and body boxes, so the theme styles it. Every slide has speaker notes. Copy the template with Drive `copy_file` and give the copy the scenario's name; never edit the template itself. If the copy fails, ask the user to make the copy and paste its link.
+16. **Fill it with find-and-replace.** Before the first edit, load the `google-workspace` skill and read its `references/slides.md`. Every placeholder is unique bracketed text, such as `[Your recommendation, in one sentence]`. Read the deck's text with Drive `read_file_content`, which takes a few KB. Then fill everything in **one `update_presentation` call made only of `replaceAllText` requests**. That call needs no object IDs, no revision guard and no styling, because the replacement keeps the box's style. Repeated placeholders such as `[Company]` change everywhere at once. Take the content from `docs/project-status.md` and the gold tables. Never invent a figure: anything not yet known stays a `[placeholder]` and is listed for the user.
+    - **Removing a slide:** delete a spare slide you don't need with `deleteObject`, but only after the user agrees.
+    - **Adding a slide:** use `duplicateObject` on a slide of the same type, then fill the copy.
+    - **Pictures:** screenshots go in by hand (the user pastes them over the grey frame), because `createImage` needs a public URL.
+    - **Rows and slide numbers:** add table rows with `insertTableRows`. Slide numbers are the user's one click: Insert → Slide numbers.
+    - **Layout changes:** only these need guarded batches (`requiredRevisionId` from a fresh read). When moving or resizing a box, keep in mind that Slides stores most elements at a 3,000,000 EMU base size with a scale. An `ABSOLUTE` transform therefore needs `scaleX` and `scaleY` set to the target size divided by 3,000,000; setting them to 1 shrinks the box.
+17. **Check it.** Skip this after a text-only fill whose texts are about the same length as the placeholders. Otherwise, export the deck to PDF with Drive `download_file_content`. Poppler isn't installed locally, so render the pages with a small Swift PDFKit script into a two-column contact sheet: one image per six slides costs fewer tokens than one per page. Look for overflow, overlap and clipped text, then fix and check again.
+18. **Write the demo script** in the speaker notes of the live-demo slide: the questions in order, which tab answers each, and the Genie fallback if an answer misses.
+
+Update CLAUDE.md and `docs/project-status.md` as you go.
 
 **Before the demo:** the user makes the final milestone commit and pushes, then pulls it into the workspace Git folder (`/Users/<you>/databricks-interview`), so the Git folder shows the same code that is deployed. In the Q&A, show code from the pipeline page first (flow diagram and SQL side by side); open the Git folder only for version-control questions.
 

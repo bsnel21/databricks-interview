@@ -9,7 +9,10 @@ A 4-hour Databricks prototype on Free Edition for a business problem: files land
 ```
 python3.12 -m venv .venv
 source .venv/bin/activate
+pip install -r requirements.txt
 ```
+
+Start Claude Code from a terminal where this venv is active (`echo $VIRTUAL_ENV` should end in `databricks-interview/.venv`), so it doesn't pick up another project's venv.
 
 2. `.env` (gitignored) for any local connection settings, for example the workspace host and warehouse id. Never commit secrets.
 

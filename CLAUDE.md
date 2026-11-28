@@ -29,12 +29,18 @@ Not started. The business problem, sources and users are decided in Phase 0 of t
 
 ## Working rules
 
+- **Accuracy over confidence: this project is for a job interview.** Work through each problem step by step before giving the final answer. Answer only what you are very sure of, and say plainly when you don't know or are unsure. Never present a guess as fact. Keep "tested" apart from "expected to work", and label anything untested.
+
 - The user commits and pushes. Never commit or push. Suggest a commit at each milestone (silver works, gold works, before the demo), so there are points to roll back to.
 - Inside the project (its catalog, bundle, Genie agent and dashboard), deploy, run the pipeline and change tables, the Genie agent and the dashboard without asking, then report what was done.
 - Ask first before deleting anything (tables, schemas, volumes, files, the Genie agent, the dashboard, or a deploy that would delete or recreate a resource), before changing grants, and before touching anything outside the project.
+- **Pre-approved: removing the dummy skeleton** once the scenario's replacements exist. This covers only: `pipeline/transformations/*/{bronze_orders,silver_orders,gold_daily_revenue}.sql` and their tables, `data/orders.csv` and `/Volumes/databricks_interview/raw/landing/orders/`, the `regional_revenue` dashboard (its bundle resource and `.lvdash.json`), and the "Regional Revenue" Genie agent (`01f1e9112d2d1e8db262657920132c4c`). Report what was removed. Everything else still needs a question.
+- **Pre-approved: `databricks bundle deploy --force -t prod`** only right after `databricks bundle generate dashboard --resource <key> --force -t prod` pulled the UI version into the repo, so local and remote match. A deploy refuses without `--force` whenever a dashboard was edited in the UI since the last deploy, and that blocks the whole deploy, including pipeline changes. Never use `--force` in any other case without asking.
+- `databricks bundle generate dashboard --resource <key>` always writes to the resource's own `.lvdash.json` in the repo, even with `--dashboard-dir`. Don't use it just to look at the remote version.
 - Deploy from the local files; they don't need to be pushed first. Run `databricks bundle validate --strict -t prod` before every deploy.
 - Never edit deployed code in the workspace UI: change the repo, then redeploy. Scratch notebooks for exploring the data or trying Genie Code are fine; anything worth keeping moves into the repo. The Genie agent and the dashboard may be changed in the UI; copy Genie changes back into `genie/genie_agent.json`, and pull dashboard changes back with `databricks bundle generate dashboard --resource <key> --force` before the next deploy.
 - Coding subagents run on Sonnet.
+- **When the data arrives** (by email: any mix of CSVs, JSON, Excel, archives), follow the intake steps and format table in playbook section 2.2 before writing SQL. Joins happen only where playbook 2.3 says (no joins in bronze; same-entity unions and key standardization in silver; business joins in gold by default, moved into an enriched silver table only when two or more gold tables repeat the same join, decided per scenario). If a join key, grain or match rule is in any doubt, ask the user before building it.
 
 ## Databricks agent skills
 
